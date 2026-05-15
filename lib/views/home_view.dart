@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
 import '../widgets/navbar.dart';
+import 'profile_view.dart'; // ← import profile
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final List<Widget> _screens = const [
     _HomeScreen(),
     _CatalogPlaceholder(),
-    _ProfilePlaceholder(),
+    ProfileScreen(), // ← pakai ProfileScreen (tanpa navbar, sudah ada di sini)
   ];
 
   void _onTabTapped(int index) {
@@ -710,25 +711,6 @@ class _CatalogPlaceholder extends StatelessWidget {
       backgroundColor: Colors.white,
       body: Center(
         child: Text('🛍️\nCatalog',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: JoyCharmColors.textMedium,
-          )),
-      ),
-    );
-  }
-}
-
-class _ProfilePlaceholder extends StatelessWidget {
-  const _ProfilePlaceholder();
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Text('👤\nProfile',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: 'Nunito', fontSize: 20,
