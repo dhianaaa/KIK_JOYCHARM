@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:joycharm/views/catalog_view.dart';
 import 'views/splash_screen.dart';
 
 void main() {
@@ -92,7 +93,7 @@ class JoyCharmApp extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       ),
-      home: const SplashScreen(),
+      home: const CatalogView(),
     );
   }
 }

@@ -1,2 +1,1 @@
-const String BaseUrl = "http://localhost:3001";
-const String BaseUrlTanpaAPi = "http://localhost:3001";
+const baseUrl = 'http://192.168.1.6:3001';
