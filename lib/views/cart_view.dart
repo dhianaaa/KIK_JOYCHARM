@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/cart_service.dart';
-import '../models/product_model.dart';
+import 'package:joycharm/models/product_model.dart';
+import 'package:joycharm/services/cart_service.dart';
 
 class CartView extends StatefulWidget {
   const CartView({super.key});

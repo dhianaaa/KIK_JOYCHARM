@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:joycharm/main.dart';
 import 'package:joycharm/models/product_model.dart';
 import 'package:joycharm/services/produk.dart';
+import 'package:joycharm/widgets/bottom_nav.dart';
 
 class CatalogView extends StatefulWidget {
   const CatalogView({super.key});
@@ -105,6 +106,7 @@ class _CatalogViewState extends State<CatalogView> {
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       ),
+      bottomNavigationBar: const JCBottomNavBar(1),
     );
   }
 

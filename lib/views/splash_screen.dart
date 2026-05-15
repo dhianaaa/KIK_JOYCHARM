@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:joycharm/main.dart';
 import 'dart:async';
-import '../main.dart';
 import 'on_boarding_page.dart';
 
 class SplashScreen extends StatefulWidget {

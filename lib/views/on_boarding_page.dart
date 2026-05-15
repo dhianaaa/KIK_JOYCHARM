@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart';
+import 'package:joycharm/main.dart';
 import 'login_view.dart';
 import 'register_user_view.dart';
 
