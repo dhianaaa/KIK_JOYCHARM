@@ -45,33 +45,54 @@ class ProductModel {
 class FavoriteService {
   Future<Map<String, dynamic>> getFavoriteProducts() async {
     try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/favorites'),
-              headers: {'Content-Type': 'application/json'})
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/GetBarang'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      print('BODY: ${response.body}');
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final list = (body['data'] as List? ?? [])
-            .map((e) => ProductModel.fromJson(e as Map<String, dynamic>))
-            .toList();
-        return {'status': true, 'data': list};
+        final decoded = jsonDecode(response.body);
+
+// karena API kamu langsung LIST
+        if (decoded is List) {
+          final list = decoded.map((e) => ProductModel.fromJson(e)).toList();
+
+          return {
+            'status': true,
+            'data': list,
+          };
+        }
+
+// fallback kalau bukan list
+        return {
+          'status': false,
+          'message': 'Format data tidak sesuai',
+          'data': [],
+        };
       }
+
       return {
         'status': false,
-        'message': 'Server error ${response.statusCode}'
+        'message': 'Server error ${response.statusCode}',
+        'data': [],
       };
     } catch (e) {
-      return {'status': false, 'message': 'Koneksi gagal: $e'};
+      return {
+        'status': false,
+        'message': 'Koneksi gagal: $e',
+        'data': [],
+      };
     }
   }
 
   Future<Map<String, dynamic>> removeFavorite(int productId) async {
     try {
       final response = await http
-          .delete(Uri.parse('$_baseUrl/favorites/$productId'),
-              headers: {'Content-Type': 'application/json'})
-          .timeout(const Duration(seconds: 10));
+          .delete(Uri.parse('$_baseUrl/GetBarang/$productId'), headers: {
+        'Content-Type': 'application/json'
+      }).timeout(const Duration(seconds: 10));
 
       return response.statusCode == 200
           ? {'status': true}
@@ -298,8 +319,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           bottom: -14,
           left: 16,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
@@ -519,8 +539,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                           child: Container(
                             padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
-                              color:
-                                  JoyCharmColors.primary.withOpacity(0.12),
+                              color: JoyCharmColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Icon(
@@ -610,8 +629,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: JoyCharmColors.primary,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30)),
               elevation: 0,
@@ -667,13 +685,12 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           ElevatedButton.icon(
             onPressed: _fetchFavorites,
             icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Coba Lagi',
-                style: TextStyle(fontFamily: 'Nunito')),
+            label:
+                const Text('Coba Lagi', style: TextStyle(fontFamily: 'Nunito')),
             style: ElevatedButton.styleFrom(
               backgroundColor: JoyCharmColors.primary,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30)),
               elevation: 0,
@@ -703,12 +720,16 @@ class _WaveClipper extends CustomClipper<Path> {
     final path = Path();
     path.lineTo(0, size.height - 40);
     path.quadraticBezierTo(
-      size.width * 0.25, size.height,
-      size.width * 0.5, size.height - 20,
+      size.width * 0.25,
+      size.height,
+      size.width * 0.5,
+      size.height - 20,
     );
     path.quadraticBezierTo(
-      size.width * 0.75, size.height - 40,
-      size.width, size.height - 10,
+      size.width * 0.75,
+      size.height - 40,
+      size.width,
+      size.height - 10,
     );
     path.lineTo(size.width, 0);
     path.close();

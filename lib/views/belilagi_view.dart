@@ -49,17 +49,23 @@ class OrderProductModel {
 class BuyAgainService {
   Future<Map<String, dynamic>> getBuyAgainProducts() async {
     try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/orders/buy-again'),
-              headers: {'Content-Type': 'application/json'})
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(Uri.parse('$_baseUrl/GetBarang'),
+          headers: {
+            'Content-Type': 'application/json'
+          }).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final list = (body['data'] as List? ?? [])
-            .map((e) => OrderProductModel.fromJson(e as Map<String, dynamic>))
-            .toList();
-        return {'status': true, 'data': list};
+        final decoded = jsonDecode(response.body);
+
+// karena API kamu LIST langsung
+        final List rawList = decoded as List;
+
+        final list = rawList.map((e) => OrderProductModel.fromJson(e)).toList();
+
+        return {
+          'status': true,
+          'data': list,
+        };
       }
       return {
         'status': false,
@@ -74,7 +80,7 @@ class BuyAgainService {
     try {
       final response = await http
           .post(
-            Uri.parse('$_baseUrl/cart'),
+            Uri.parse('$_baseUrl/GetBarang'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'product_id': productId, 'qty': qty}),
           )
@@ -141,6 +147,7 @@ class _BuyAgainScreenState extends State<BuyAgainScreen>
 
   Future<void> _addToCart(OrderProductModel product) async {
     if (_loadingCart.contains(product.id)) return;
+    if (product.id == null) return;
     setState(() => _loadingCart.add(product.id!));
 
     final result =
@@ -193,8 +200,7 @@ class _BuyAgainScreenState extends State<BuyAgainScreen>
           if (_isLoading)
             const SliverFillRemaining(
               child: Center(
-                child: CircularProgressIndicator(
-                    color: JoyCharmColors.primary),
+                child: CircularProgressIndicator(color: JoyCharmColors.primary),
               ),
             )
           else if (_errorMessage != null)
@@ -379,7 +385,7 @@ class _BuyAgainScreenState extends State<BuyAgainScreen>
 
   // ── Product Card ──────────────────────────────────────────────────────────
   Widget _buildProductCard(OrderProductModel product) {
-    final bool outOfStock = (product.stock ?? 1) == 0;
+    final bool outOfStock = (product.stock ?? 0) <= 0;
     final bool isLoading = _loadingCart.contains(product.id);
 
     return GestureDetector(
@@ -659,16 +665,15 @@ class _BuyAgainScreenState extends State<BuyAgainScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: JoyCharmColors.primary,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30)),
               elevation: 0,
             ),
             child: const Text(
               'Mulai Belanja',
-              style: TextStyle(
-                  fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+              style:
+                  TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -718,13 +723,12 @@ class _BuyAgainScreenState extends State<BuyAgainScreen>
           ElevatedButton.icon(
             onPressed: _fetchProducts,
             icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Coba Lagi',
-                style: TextStyle(fontFamily: 'Nunito')),
+            label:
+                const Text('Coba Lagi', style: TextStyle(fontFamily: 'Nunito')),
             style: ElevatedButton.styleFrom(
               backgroundColor: JoyCharmColors.primary,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30)),
               elevation: 0,
@@ -754,12 +758,16 @@ class _WaveClipper extends CustomClipper<Path> {
     final path = Path();
     path.lineTo(0, size.height - 40);
     path.quadraticBezierTo(
-      size.width * 0.25, size.height,
-      size.width * 0.5, size.height - 20,
+      size.width * 0.25,
+      size.height,
+      size.width * 0.5,
+      size.height - 20,
     );
     path.quadraticBezierTo(
-      size.width * 0.75, size.height - 40,
-      size.width, size.height - 10,
+      size.width * 0.75,
+      size.height - 40,
+      size.width,
+      size.height - 10,
     );
     path.lineTo(size.width, 0);
     path.close();
