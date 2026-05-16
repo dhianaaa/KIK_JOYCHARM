@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:joycharm/models/product_model.dart';
-import 'package:joycharm/services/cart_service.dart';
+import 'checkout_view.dart';
+import '../services/cart_service.dart';
 
 class CartView extends StatefulWidget {
   const CartView({super.key});
@@ -19,10 +20,7 @@ class _CartViewState extends State<CartView> {
   int get finalTotal => cart.total - discount;
 
   String formatRupiah(int value) {
-    return "Rp ${value.toString().replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
-    )}";
+    return "Rp ${value.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}";
   }
 
   Map<String, List<ProductModel>> groupByCategory() {
@@ -42,20 +40,42 @@ class _CartViewState extends State<CartView> {
     final grouped = groupByCategory();
 
     return Scaffold(
-      backgroundColor: const Color(0xffF6F6F6),
+      backgroundColor: Colors.pink,
 
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
         title: const Text("Cart"),
         backgroundColor: Colors.pink,
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
 
       body: cart.items.isEmpty
-          ? const Center(child: Text("Cart masih kosong 😢"))
-          : ListView(
-              children: grouped.entries.map((entry) {
-                return _buildCategory(entry.key, entry.value);
-              }).toList(),
+          ? const Center(
+              child: Text(
+                "Cart masih kosong 😢",
+                style: TextStyle(color: Colors.white),
+              ),
+            )
+          : Container(
+              width: double.infinity,
+
+              decoration: const BoxDecoration(
+                color: Color(0xffF6F6F6),
+
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+
+              child: ListView(
+                children: grouped.entries.map((entry) {
+                  return _buildCategory(entry.key, entry.value);
+                }).toList(),
+              ),
             ),
 
       bottomSheet: _bottomBar(),
@@ -76,8 +96,10 @@ class _CartViewState extends State<CartView> {
             children: [
               const Icon(Icons.store, size: 18),
               const SizedBox(width: 6),
-              Text(category,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                category,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           ...products.map((p) => _itemCard(p)).toList(),
@@ -136,7 +158,7 @@ class _CartViewState extends State<CartView> {
                 cart.remove(p);
               });
             },
-          )
+          ),
         ],
       ),
     );
@@ -176,22 +198,25 @@ class _CartViewState extends State<CartView> {
               Text(
                 formatRupiah(finalTotal),
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.red),
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
               const Spacer(),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.pink,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.pink),
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Checkout berhasil!")),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CheckoutView(products: cart.items),
+                    ),
                   );
                 },
                 child: const Text("Checkout"),
-              )
+              ),
             ],
-          )
+          ),
         ],
       ),
     );
