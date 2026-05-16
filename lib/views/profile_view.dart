@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:joycharm/main.dart';
+import 'package:joycharm/views/belilagi_view.dart';
 import 'package:joycharm/views/favorite_view.dart';
 import 'package:joycharm/widgets/bottom_nav.dart';
 
@@ -285,21 +286,16 @@ class ProfileScreen extends StatelessWidget {
           color: JoyCharmColors.primary,
         ),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          // Order status row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _orderStatusItem(Icons.payment_outlined, 'Belum\nbayar', badge: 0),
-              _divider(),
-              _orderStatusItem(Icons.inventory_2_outlined, 'Dikemas', badge: 0),
-              _divider(),
-              _orderStatusItem(Icons.local_shipping_outlined, 'Dikirim', badge: 2),
-              _divider(),
-              _orderStatusItem(Icons.star_outline_rounded, 'Beri nilai', badge: 0),
-            ],
-          ),
+          _orderStatusItem(Icons.payment_outlined, 'Belum\nbayar', badge: 0),
+          _divider(),
+          _orderStatusItem(Icons.inventory_2_outlined, 'Dikemas', badge: 0),
+          _divider(),
+          _orderStatusItem(Icons.local_shipping_outlined, 'Dikirim', badge: 2),
+          _divider(),
+          _orderStatusItem(Icons.star_outline_rounded, 'Beri nilai', badge: 0),
         ],
       ),
     );
@@ -466,26 +462,34 @@ class ProfileScreen extends StatelessWidget {
         children: [
           Row(
             children: [
+              // ── Beli Lagi ──────────────────────────────────────────────
               Expanded(
                 child: _activityButton(
                   emoji: '🔁',
                   label: 'Beli lagi',
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const BuyAgainScreen(),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 12),
+              // ── Favorit ────────────────────────────────────────────────
               Expanded(
                 child: _activityButton(
-  emoji: '❤️',
-  label: 'Favorit saya',
-  onTap: () {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (context) => FavoriteScreen(),
-    ),
-  );
-},
-),
+                  emoji: '❤️',
+                  label: 'Favorit saya',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FavoriteScreen(),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -525,9 +529,8 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
         child: Row(
-          mainAxisAlignment: fullWidth
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
+          mainAxisAlignment:
+              fullWidth ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 18)),
             const SizedBox(width: 8),

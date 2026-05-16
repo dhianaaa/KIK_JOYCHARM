@@ -5,11 +5,11 @@ import '../models/product_model.dart';
 class FavoriteService {
   static const String baseUrl = 'http://192.168.1.6:3001';
 
-  // 1️⃣ GET: Ambil semua produk favorit dari API
+  // 1️⃣ GET: Ambil semua produk favorit
   Future<Map<String, dynamic>> getFavoriteProducts() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/favorites'), // Sesuaikan endpoint dengan API kamu
+        Uri.parse('$baseUrl/GetBarang'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -20,27 +20,30 @@ class FavoriteService {
 
       if (response.statusCode == 200) {
         final dynamic jsonResponse = json.decode(response.body);
-        
+
         List<ProductModel> products = [];
-        
-        // Sesuaikan parsing dengan struktur response API kamu
-        // Contoh jika response berupa list langsung: [{...}, {...}]
+
+        // CASE 1: langsung List
         if (jsonResponse is List) {
-          products = jsonResponse.map((x) => ProductModel.fromJson(x)).toList();
-        } 
-        // Contoh jika response berbentuk: {"data": [{...}, {...}]}
+          products = jsonResponse
+              .map<ProductModel>((e) => ProductModel.fromJson(e))
+              .toList();
+        }
+
+        // CASE 2: {data: []}
         else if (jsonResponse is Map && jsonResponse['data'] != null) {
           products = (jsonResponse['data'] as List)
-              .map((x) => ProductModel.fromJson(x))
+              .map<ProductModel>((e) => ProductModel.fromJson(e))
               .toList();
         }
-        // Contoh jika response berbentuk: {"favorites": [{...}, {...}]}
+
+        // CASE 3: {favorites: []}
         else if (jsonResponse is Map && jsonResponse['favorites'] != null) {
           products = (jsonResponse['favorites'] as List)
-              .map((x) => ProductModel.fromJson(x))
+              .map<ProductModel>((e) => ProductModel.fromJson(e))
               .toList();
         }
-        
+
         return {
           'status': true,
           'data': products,
@@ -49,7 +52,7 @@ class FavoriteService {
         return {
           'status': false,
           'message': 'Gagal memuat favorit (${response.statusCode})',
-          'data': [],
+          'data': <ProductModel>[],
         };
       }
     } catch (e) {
@@ -57,16 +60,16 @@ class FavoriteService {
       return {
         'status': false,
         'message': 'Error: $e',
-        'data': [],
+        'data': <ProductModel>[],
       };
     }
   }
 
-  // 2️⃣ DELETE: Hapus produk dari favorit
+  // 2️⃣ DELETE: Hapus dari favorit
   Future<Map<String, dynamic>> removeFavorite(int productId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/favorites/$productId'), // Sesuaikan endpoint
+        Uri.parse('$baseUrl/GetBarang/$productId'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -99,11 +102,13 @@ class FavoriteService {
   Future<Map<String, dynamic>> addFavorite(int productId) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/favorites'),
+        Uri.parse('$baseUrl/GetBarang'),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: json.encode({'product_id': productId}),
+        body: json.encode({
+          'product_id': productId,
+        }),
       ).timeout(const Duration(seconds: 10));
 
       print('POST Favorite - Status: ${response.statusCode}');
@@ -117,7 +122,7 @@ class FavoriteService {
       } else {
         return {
           'status': false,
-          'message': 'Gagal menambahkan favorit',
+          'message': 'Gagal menambahkan favorit (${response.statusCode})',
         };
       }
     } catch (e) {
