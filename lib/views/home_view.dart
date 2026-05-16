@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:joycharm/views/tutorial_view.dart';
 import '../main.dart';
 import '../widgets/navbar.dart';
+import '../models/product_model.dart';
+import '../services/produk.dart';
 import 'profile_view.dart';
-import '../services/app_config.dart' as url;
+import 'catalog_view.dart';
+import '../data/tutorial_data.dart';
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -18,11 +21,26 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    _HomeScreen(),
-    _CatalogPlaceholder(),
-    ProfileScreen(),
-  ];
+  late final List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      _HomeScreen(
+        onGoToCatalog: () => _onTabTapped(1),
+        onGoToTutorial: () {
+          // ← tambah ini
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const TutorialView()),
+          );
+        },
+      ),
+      CatalogView(),
+      ProfileScreen(),
+    ];
+  }
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -48,7 +66,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 class _HomeScreen extends StatefulWidget {
-  const _HomeScreen();
+  final VoidCallback? onGoToCatalog;
+  final VoidCallback? onGoToTutorial;
+  const _HomeScreen({this.onGoToCatalog, this.onGoToTutorial});
 
   @override
   State<_HomeScreen> createState() => _HomeScreenState();
@@ -63,12 +83,49 @@ class _HomeScreenState extends State<_HomeScreen>
   int _activeBanner = 0;
   late PageController _bannerController;
 
+  Widget _buildImageFromString(String image, double height) {
+  if (image.startsWith('data:image')) {
+    try {
+      final base64Str = image.split(',').last;
+      final bytes = base64Decode(base64Str);
+      return Image.memory(
+        bytes,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          height: height,
+          color: const Color(0xFFFFEEF5),
+          child: const Center(child: Text('🎨', style: TextStyle(fontSize: 36))),
+        ),
+      );
+    } catch (e) {
+      return Container(
+        height: height,
+        color: const Color(0xFFFFEEF5),
+        child: const Center(child: Text('🎨', style: TextStyle(fontSize: 36))),
+      );
+    }
+  }
+  return Image.network(
+    image,
+    height: height,
+    width: double.infinity,
+    fit: BoxFit.cover,
+    errorBuilder: (_, __, ___) => Container(
+      height: height,
+      color: const Color(0xFFFFEEF5),
+      child: const Center(child: Text('🎨', style: TextStyle(fontSize: 36))),
+    ),
+  );
+}
+
   final String _userName = 'Joy';
 
   // ── State produk dari API ─────────────────────────────────────────────────
-  List<_ProductData> _newProducts = [];
-  List<_ProductData> _recommendProducts = [];
-  bool _isLoadingProduk = true;
+  List<ProductModel> _newProducts = [];
+  List<ProductModel> _recommendProducts = [];
+  bool _isLoading = true;
   String? _errorProduk;
 
   final List<_BannerData> _banners = [
@@ -96,14 +153,27 @@ class _HomeScreenState extends State<_HomeScreen>
   ];
 
   final List<_ShortcutData> _shortcuts = [
-    _ShortcutData(emoji: '🛍️', label: 'Catalog',       color: Color(0xFFFFF0F7), borderColor: Color(0xFFFFD6EC)),
-    _ShortcutData(emoji: '🎨', label: 'Craft Journey', color: Color(0xFFEDFAFA), borderColor: Color(0xFFB2EBEB)),
-    _ShortcutData(emoji: '🎥', label: 'Tutorial',      color: Color(0xFFFFF8E7), borderColor: Color(0xFFFFE0A0)),
+    _ShortcutData(
+        emoji: '🛍️',
+        label: 'Catalog',
+        color: Color(0xFFFFF0F7),
+        borderColor: Color(0xFFFFD6EC)),
+    _ShortcutData(
+        emoji: '🎨',
+        label: 'Craft Journey',
+        color: Color(0xFFEDFAFA),
+        borderColor: Color(0xFFB2EBEB)),
+    _ShortcutData(
+        emoji: '🎥',
+        label: 'Tutorial',
+        color: Color(0xFFFFF8E7),
+        borderColor: Color(0xFFFFE0A0)),
   ];
 
   final List<_TutorialData> _tutorials = [
     _TutorialData(
-      title: 'How to make a Lip Holder Keychain / Bag Charm Parfum Holder Keychain by yofuldemoda',
+      title:
+          'How to make a Lip Holder Keychain / Bag Charm Parfum Holder Keychain by yofuldemoda',
       duration: '12 min',
       level: 'Pemula',
       emoji: '🔑',
@@ -132,94 +202,51 @@ class _HomeScreenState extends State<_HomeScreen>
     super.initState();
     _bannerController = PageController(viewportFraction: 1.0);
     Future.delayed(const Duration(seconds: 3), _autoScrollBanner);
-    _fetchBarang(); // ← ambil data produk dari API
+    _fetchProducts();
   }
 
-  // ── Fetch dari API ────────────────────────────────────────────────────────
+  // ── Fetch dari ProdukService ──────────────────────────────────────────────
 
-  Future<void> _fetchBarang() async {
-    try {
-      // Ganti dengan IP sesuai device:
-      // - Emulator Android : http://10.0.2.2:3001
-      // - Device fisik     : http://192.168.x.x:3001
-      // - iOS Simulator    : http://localhost:3001
-      final uri = Uri.parse('${url.BaseUrl}/Get Barang');
-      final response = await http.get(uri);
+  Future<void> _fetchProducts() async {
+    setState(() {
+      _isLoading = true;
+      _errorProduk = null;
+    });
 
-      if (response.statusCode == 200) {
-        final List decoded = json.decode(response.body);
+    final result = await ProdukService().getProducts();
 
-        final allProducts = decoded.asMap().entries.map((entry) {
-          final i = entry.key;
-          final item = entry.value;
-          return _ProductData(
-            name: item['name'] ?? '',
-            price: _formatRupiah(item['price']),
-            rating: (item['rating'] ?? 0).toString(),
-            imageUrl: item['image'] ?? '',
-            isPromo: false,
-            color: _productColors[i % _productColors.length],
-          );
-        }).toList();
+    if (!mounted) return;
 
-        if (mounted) {
-          setState(() {
-            // "New" = category == 'New', sisanya "Rekomendasi"
-            _newProducts = decoded.asMap().entries
-                .where((e) => e.value['category'] == 'New')
-                .map((e) => _ProductData(
-                      name: e.value['name'] ?? '',
-                      price: _formatRupiah(e.value['price']),
-                      rating: (e.value['rating'] ?? 0).toString(),
-                      imageUrl: e.value['image'] ?? '',
-                      isPromo: false,
-                      color: _productColors[e.key % _productColors.length],
-                    ))
-                .toList();
+    if (result['status'] == true) {
+      final List<ProductModel> allProducts =
+          List<ProductModel>.from(result['data']);
 
-            _recommendProducts = decoded.asMap().entries
-                .where((e) => e.value['category'] != 'New')
-                .map((e) => _ProductData(
-                      name: e.value['name'] ?? '',
-                      price: _formatRupiah(e.value['price']),
-                      rating: (e.value['rating'] ?? 0).toString(),
-                      imageUrl: e.value['image'] ?? '',
-                      isPromo: false,
-                      color: _productColors[e.key % _productColors.length],
-                    ))
-                .toList();
+      setState(() {
+        _newProducts = allProducts.where((p) => p.category == 'New').toList();
 
-            // Kalau semua category == 'New', tampilkan semua di rekomendasi juga
-            if (_recommendProducts.isEmpty) _recommendProducts = allProducts;
+        _recommendProducts =
+            allProducts.where((p) => p.category != 'New').toList();
 
-            _isLoadingProduk = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _errorProduk = 'Gagal memuat produk (${response.statusCode})';
-            _isLoadingProduk = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorProduk = 'Tidak dapat terhubung ke server';
-          _isLoadingProduk = false;
-        });
-      }
+        // Kalau semua category == 'New', tampilkan semua di rekomendasi juga
+        if (_recommendProducts.isEmpty) _recommendProducts = allProducts;
+
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _errorProduk = 'Tidak dapat terhubung ke server';
+        _isLoading = false;
+      });
     }
   }
 
-  String _formatRupiah(dynamic price) {
+  String _formatRupiah(double? price) {
     if (price == null) return 'Rp 0';
-    final number = int.tryParse(price.toString()) ?? 0;
+    final number = price.toInt();
     final formatted = number.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
-    );
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]}.',
+        );
     return 'Rp $formatted';
   }
 
@@ -251,11 +278,17 @@ class _HomeScreenState extends State<_HomeScreen>
         SliverToBoxAdapter(child: _buildHeader()),
         SliverToBoxAdapter(child: _buildBannerCarousel()),
         SliverToBoxAdapter(child: _buildShortcuts()),
-        SliverToBoxAdapter(child: _buildSectionHeader('New', 'Lihat Semua', color: JoyCharmColors.primary)),
+        SliverToBoxAdapter(
+            child: _buildSectionHeader('New', 'Lihat Semua',
+                color: JoyCharmColors.primary)),
         SliverToBoxAdapter(child: _buildProductSection(_newProducts)),
-        SliverToBoxAdapter(child: _buildSectionHeader('Rekomendasi', 'Lihat Semua', color: JoyCharmColors.primary)),
+        SliverToBoxAdapter(
+            child: _buildSectionHeader('Rekomendasi', 'Lihat Semua',
+                color: JoyCharmColors.primary)),
         SliverToBoxAdapter(child: _buildProductSection(_recommendProducts)),
-        SliverToBoxAdapter(child: _buildSectionHeader('Tutorial DIY', 'Semua', color: JoyCharmColors.primary)),
+        SliverToBoxAdapter(
+            child: _buildSectionHeader('Tutorial DIY', 'Semua',
+                color: JoyCharmColors.primary)),
         SliverToBoxAdapter(child: _buildTutorialGrid()),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ],
@@ -268,19 +301,24 @@ class _HomeScreenState extends State<_HomeScreen>
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 14,
-        left: 20, right: 20, bottom: 18,
+        left: 20,
+        right: 20,
+        bottom: 18,
       ),
       color: const Color(0xFF4DBFBF),
       child: Row(
         children: [
           Container(
-            width: 42, height: 42,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.25),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+              border:
+                  Border.all(color: Colors.white.withOpacity(0.5), width: 2),
             ),
-            child: const Center(child: Text('😊', style: TextStyle(fontSize: 20))),
+            child:
+                const Center(child: Text('😊', style: TextStyle(fontSize: 20))),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -290,8 +328,10 @@ class _HomeScreenState extends State<_HomeScreen>
                   TextSpan(
                     text: 'Hai, $_userName! ',
                     style: const TextStyle(
-                      fontFamily: 'Nunito', fontSize: 16,
-                      fontWeight: FontWeight.w900, color: Colors.white,
+                      fontFamily: 'Nunito',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
                     ),
                   ),
                   const TextSpan(text: '✨', style: TextStyle(fontSize: 14)),
@@ -302,25 +342,29 @@ class _HomeScreenState extends State<_HomeScreen>
           GestureDetector(
             onTap: () {},
             child: Container(
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Center(child: Text('🎟️', style: TextStyle(fontSize: 18))),
+              child: const Center(
+                  child: Text('🎟️', style: TextStyle(fontSize: 18))),
             ),
           ),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () {},
             child: Container(
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Center(
-                child: Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 20),
+                child: Icon(Icons.shopping_cart_outlined,
+                    color: Colors.white, size: 20),
               ),
             ),
           ),
@@ -356,16 +400,19 @@ class _HomeScreenState extends State<_HomeScreen>
                     boxShadow: [
                       BoxShadow(
                         color: b.bgGradient[0].withOpacity(0.3),
-                        blurRadius: 16, offset: const Offset(0, 6),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
                   child: Stack(
                     children: [
                       Positioned(
-                        right: -20, top: -20,
+                        right: -20,
+                        top: -20,
                         child: Container(
-                          width: 120, height: 120,
+                          width: 120,
+                          height: 120,
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.15),
                             shape: BoxShape.circle,
@@ -373,9 +420,11 @@ class _HomeScreenState extends State<_HomeScreen>
                         ),
                       ),
                       Positioned(
-                        right: 30, bottom: -30,
+                        right: 30,
+                        bottom: -30,
                         child: Container(
-                          width: 90, height: 90,
+                          width: 90,
+                          height: 90,
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.10),
                             shape: BoxShape.circle,
@@ -392,45 +441,53 @@ class _HomeScreenState extends State<_HomeScreen>
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(0.3),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(b.tag,
-                                      style: const TextStyle(
-                                        fontFamily: 'Nunito', fontSize: 10,
-                                        fontWeight: FontWeight.w800, color: Colors.white,
-                                        letterSpacing: 0.5,
-                                      )),
+                                        style: const TextStyle(
+                                          fontFamily: 'Nunito',
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                          letterSpacing: 0.5,
+                                        )),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(b.title,
-                                    style: const TextStyle(
-                                      fontFamily: 'Nunito', fontSize: 20,
-                                      fontWeight: FontWeight.w900, color: Colors.white,
-                                      height: 1.2,
-                                    )),
+                                      style: const TextStyle(
+                                        fontFamily: 'Nunito',
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        height: 1.2,
+                                      )),
                                   const SizedBox(height: 4),
                                   Text(b.subtitle,
-                                    style: TextStyle(
-                                      fontFamily: 'Nunito', fontSize: 11,
-                                      color: Colors.white.withOpacity(0.85),
-                                      fontWeight: FontWeight.w500,
-                                    )),
+                                      style: TextStyle(
+                                        fontFamily: 'Nunito',
+                                        fontSize: 11,
+                                        color: Colors.white.withOpacity(0.85),
+                                        fontWeight: FontWeight.w500,
+                                      )),
                                   const SizedBox(height: 10),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 5),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text('Lihat Sekarang',
-                                      style: TextStyle(
-                                        fontFamily: 'Nunito', fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: b.bgGradient[0],
-                                      )),
+                                        style: TextStyle(
+                                          fontFamily: 'Nunito',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: b.bgGradient[0],
+                                        )),
                                   ),
                                 ],
                               ),
@@ -484,25 +541,36 @@ class _HomeScreenState extends State<_HomeScreen>
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: _shortcuts.map((s) {
           return GestureDetector(
-            onTap: () {},
+            onTap: () {
+              if (s.label == 'Catalog') {
+                widget.onGoToCatalog?.call();
+              } else if (s.label == 'Tutorial') {
+                // ← tambah ini
+                widget.onGoToTutorial?.call();
+              }
+            },
             child: Column(
               children: [
                 Container(
-                  width: 64, height: 64,
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
                     color: s.color,
                     shape: BoxShape.circle,
                     border: Border.all(color: s.borderColor, width: 1.5),
                   ),
-                  child: Center(child: Text(s.emoji, style: const TextStyle(fontSize: 28))),
+                  child: Center(
+                      child:
+                          Text(s.emoji, style: const TextStyle(fontSize: 28))),
                 ),
                 const SizedBox(height: 8),
                 Text(s.label,
-                  style: const TextStyle(
-                    fontFamily: 'Nunito', fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: JoyCharmColors.textDark,
-                  )),
+                    style: const TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: JoyCharmColors.textDark,
+                    )),
               ],
             ),
           );
@@ -513,35 +581,40 @@ class _HomeScreenState extends State<_HomeScreen>
 
   // ── Section Header ────────────────────────────────────────────────────────
 
-  Widget _buildSectionHeader(String title, String action, {required Color color}) {
+  Widget _buildSectionHeader(String title, String action,
+      {required Color color}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(title,
-            style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 18,
-              fontWeight: FontWeight.w900, color: color,
-            )),
+              style: TextStyle(
+                fontFamily: 'Nunito',
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: color,
+              )),
           GestureDetector(
             onTap: () {},
             child: Text(action,
-              style: const TextStyle(
-                fontFamily: 'Nunito', fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: JoyCharmColors.textMedium,
-              )),
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: JoyCharmColors.textMedium,
+                )),
           ),
         ],
       ),
     );
   }
 
-  // ── Product Section (loading / error / data) ──────────────────────────────
+  // ── Product Section: handle loading / error / kosong / data ──────────────
 
-  Widget _buildProductSection(List<_ProductData> products) {
-    if (_isLoadingProduk) {
+  Widget _buildProductSection(List<ProductModel> products) {
+    // Loading
+    if (_isLoading) {
       return const SizedBox(
         height: 220,
         child: Center(
@@ -550,6 +623,7 @@ class _HomeScreenState extends State<_HomeScreen>
       );
     }
 
+    // Error
     if (_errorProduk != null) {
       return SizedBox(
         height: 220,
@@ -560,30 +634,28 @@ class _HomeScreenState extends State<_HomeScreen>
               const Text('😢', style: TextStyle(fontSize: 32)),
               const SizedBox(height: 8),
               Text(_errorProduk!,
-                style: const TextStyle(
-                  fontFamily: 'Nunito', fontSize: 13,
-                  color: JoyCharmColors.textMedium,
-                )),
+                  style: const TextStyle(
+                    fontFamily: 'Nunito',
+                    fontSize: 13,
+                    color: JoyCharmColors.textMedium,
+                  )),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isLoadingProduk = true;
-                    _errorProduk = null;
-                  });
-                  _fetchBarang();
-                },
+                onTap: _fetchProducts,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   decoration: BoxDecoration(
                     color: JoyCharmColors.primary,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text('Coba Lagi',
-                    style: TextStyle(
-                      fontFamily: 'Nunito', fontSize: 12,
-                      fontWeight: FontWeight.w700, color: Colors.white,
-                    )),
+                      style: TextStyle(
+                        fontFamily: 'Nunito',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      )),
                 ),
               ),
             ],
@@ -592,37 +664,50 @@ class _HomeScreenState extends State<_HomeScreen>
       );
     }
 
+    // Kosong
     if (products.isEmpty) {
       return const SizedBox(
         height: 220,
         child: Center(
           child: Text('Belum ada produk 🛍️',
-            style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 13,
-              color: JoyCharmColors.textMedium,
-            )),
+              style: TextStyle(
+                fontFamily: 'Nunito',
+                fontSize: 13,
+                color: JoyCharmColors.textMedium,
+              )),
         ),
       );
     }
 
+    // Ada data → tampilkan
     return _buildProductRow(products);
   }
 
   // ── Product Row ───────────────────────────────────────────────────────────
 
-  Widget _buildProductRow(List<_ProductData> products) {
+  Widget _buildProductRow(List<ProductModel> products) {
+    final List<Color> colors = [
+      Color(0xFFFFF0F7),
+      Color(0xFFEDFAFA),
+      Color(0xFFFFF8E7),
+      Color(0xFFF0F8FF),
+      Color(0xFFF5F0FF),
+    ];
+
     return SizedBox(
-      height: 220,
+      height: 240,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: products.length,
         itemBuilder: (context, index) {
           final p = products[index];
+          final bgColor = colors[index % colors.length];
+
           return GestureDetector(
             onTap: () {},
             child: Container(
-              width: 150,
+              width: 160,
               margin: const EdgeInsets.only(right: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -631,190 +716,98 @@ class _HomeScreenState extends State<_HomeScreen>
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10, offset: const Offset(0, 3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Gambar dari URL atau fallback warna
-                  Container(
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: p.color,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                    ),
-                    child: Stack(
-                      children: [
-                        // Tampilkan gambar dari URL
-                        ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                          child: p.imageUrl.isNotEmpty
-                              ? Image.network(
-                                  p.imageUrl,
-                                  width: double.infinity,
-                                  height: 120,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Center(
-                                    child: Text('🛍️', style: TextStyle(fontSize: 44)),
+                  // Gambar dari URL
+                  ClipRRect(
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(16)),
+                    child: p.image != null && p.image!.isNotEmpty
+                        ? Image.network(
+                            p.image!,
+                            height: 120,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              height: 120,
+                              color: bgColor,
+                              child: const Center(
+                                child:
+                                    Text('🛍️', style: TextStyle(fontSize: 40)),
+                              ),
+                            ),
+                            loadingBuilder: (_, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                height: 120,
+                                color: bgColor,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: JoyCharmColors.primary,
                                   ),
-                                  loadingBuilder: (_, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return const Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: JoyCharmColors.primary,
-                                      ),
-                                    );
-                                  },
-                                )
-                              : const Center(child: Text('🛍️', style: TextStyle(fontSize: 44))),
-                        ),
-                        if (p.isPromo)
-                          Positioned(
-                            top: 8, left: 8,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _promoBadge('PROMO'),
-                                const SizedBox(height: 2),
-                                _promoBadge('XTRA'),
-                              ],
+                                ),
+                              );
+                            },
+                          )
+                        : Container(
+                            height: 120,
+                            color: bgColor,
+                            child: const Center(
+                              child:
+                                  Text('🛍️', style: TextStyle(fontSize: 40)),
                             ),
                           ),
-                      ],
-                    ),
                   ),
                   // Info
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(p.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Nunito', fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: JoyCharmColors.textDark, height: 1.3,
-                            )),
-                          const Spacer(),
-                          Row(
-                            children: [
-                              Text(p.price,
-                                style: const TextStyle(
-                                  fontFamily: 'Nunito', fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: JoyCharmColors.primary,
-                                )),
-                              const Spacer(),
-                              const Icon(Icons.star_rounded, color: Color(0xFFFFD166), size: 11),
-                              Text(' ${p.rating}',
-                                style: const TextStyle(
-                                  fontFamily: 'Nunito', fontSize: 10,
-                                  color: JoyCharmColors.textMedium,
-                                )),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _promoBadge(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: JoyCharmColors.primary,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(text,
-        style: const TextStyle(
-          fontFamily: 'Nunito', fontSize: 8,
-          fontWeight: FontWeight.w900, color: Colors.white,
-        )),
-    );
-  }
-
-  // ── Tutorial Grid ─────────────────────────────────────────────────────────
-
-  Widget _buildTutorialGrid() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.85,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: _tutorials.length,
-        itemBuilder: (context, index) {
-          final t = _tutorials[index];
-          return GestureDetector(
-            onTap: () {},
-            child: Container(
-              decoration: BoxDecoration(
-                color: t.color,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8, offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                    ),
-                    child: Center(child: Text(t.emoji, style: const TextStyle(fontSize: 40))),
-                  ),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(10),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(t.title,
-                            maxLines: 3,
+                          Text(
+                            p.name ?? 'No Name',
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontFamily: 'Nunito', fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: JoyCharmColors.textDark, height: 1.3,
-                            )),
+                              fontFamily: 'Nunito',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: JoyCharmColors.textDark,
+                              height: 1.3,
+                            ),
+                          ),
                           const Spacer(),
+                          Text(
+                            _formatRupiah(p.price),
+                            style: const TextStyle(
+                              fontFamily: 'Nunito',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: JoyCharmColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           Row(
                             children: [
-                              const Icon(Icons.play_circle_outline_rounded,
-                                  size: 13, color: JoyCharmColors.primary),
-                              const SizedBox(width: 3),
-                              Text(t.duration,
+                              const Icon(Icons.star_rounded,
+                                  color: Color(0xFFFFD166), size: 13),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${p.rating ?? 0}',
                                 style: const TextStyle(
-                                  fontFamily: 'Nunito', fontSize: 10,
+                                  fontFamily: 'Nunito',
+                                  fontSize: 11,
                                   color: JoyCharmColors.textMedium,
-                                  fontWeight: FontWeight.w600,
-                                )),
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -829,6 +822,112 @@ class _HomeScreenState extends State<_HomeScreen>
       ),
     );
   }
+
+  // ── Tutorial Grid ─────────────────────────────────────────────────────────
+
+  Widget _buildTutorialGrid() {
+  // Ambil semua item dari tutorialData milik TutorialView
+  // Gabungkan semua kategori jadi satu list
+  final List<Map<String, String>> allItems = [];
+  
+  tutorialData.forEach((category, items) {
+  allItems.addAll(items);
+});
+
+  // Tampilkan hanya 4 item pertama di home
+  final preview = allItems.take(4).toList();
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.85,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: preview.length,
+      itemBuilder: (context, index) {
+        final item = preview[index];
+        return GestureDetector(
+          onTap: () => widget.onGoToTutorial?.call(),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF0F7),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Gambar dari tutorial
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  child: _buildImageFromString(item["image"]!, 100),
+                ),
+                // Info
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item["title"]!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Nunito',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: JoyCharmColors.textDark,
+                            height: 1.3,
+                          ),
+                        ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Color(0xFFFFD166),
+                              size: 13,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              item["points"]!,
+                              style: const TextStyle(
+                                fontFamily: 'Nunito',
+                                fontSize: 10,
+                                color: JoyCharmColors.textMedium,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+  
+}
+
 }
 
 // ─── Data Models ──────────────────────────────────────────────────────────────
@@ -837,8 +936,10 @@ class _BannerData {
   final String title, subtitle, tag, emoji;
   final List<Color> bgGradient;
   const _BannerData({
-    required this.title, required this.subtitle,
-    required this.tag, required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.tag,
+    required this.emoji,
     required this.bgGradient,
   });
 }
@@ -847,19 +948,10 @@ class _ShortcutData {
   final String emoji, label;
   final Color color, borderColor;
   const _ShortcutData({
-    required this.emoji, required this.label,
-    required this.color, required this.borderColor,
-  });
-}
-
-class _ProductData {
-  final String name, price, rating, imageUrl; // ← imageUrl ganti emoji
-  final bool isPromo;
-  final Color color;
-  const _ProductData({
-    required this.name, required this.price,
-    required this.rating, required this.imageUrl,
-    required this.isPromo, required this.color,
+    required this.emoji,
+    required this.label,
+    required this.color,
+    required this.borderColor,
   });
 }
 
@@ -867,8 +959,11 @@ class _TutorialData {
   final String title, duration, level, emoji;
   final Color color;
   const _TutorialData({
-    required this.title, required this.duration,
-    required this.level, required this.emoji, required this.color,
+    required this.title,
+    required this.duration,
+    required this.level,
+    required this.emoji,
+    required this.color,
   });
 }
 
@@ -882,12 +977,13 @@ class _CatalogPlaceholder extends StatelessWidget {
       backgroundColor: Colors.white,
       body: Center(
         child: Text('🛍️\nCatalog',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: JoyCharmColors.textMedium,
-          )),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Nunito',
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: JoyCharmColors.textMedium,
+            )),
       ),
     );
   }

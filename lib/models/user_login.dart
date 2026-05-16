@@ -2,55 +2,58 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class UserLogin {
   bool status;
-  String token;
-  String message;
-  dynamic id;
-  String namaUser;
-  String email;
-  String role;
+  String? namaUser;
+  String? message;
+  int? id;
+  String? email;
+  String? role;
 
   UserLogin({
-    required this.status,
-    required this.token,
-    required this.message,
-    required this.id,
-    required this.namaUser,
-    required this.email,
-    required this.role,
+    this.status = false,
+    this.namaUser,
+    this.message,
+    this.id,
+    this.email,
+    this.role,
   });
 
-  /// Simpan data login ke SharedPreferences
+  // Simpan data login ke SharedPreferences
   Future<void> prefs() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setBool('isLoggedIn', true);
-    await sp.setString('token', token);
-    await sp.setString('email', email);
-    await sp.setString('nama_user', namaUser);
-    await sp.setString('role', role);
-    await sp.setString('id', id.toString());
+    final pref = await SharedPreferences.getInstance();
+    await pref.setBool('is_login', status);
+    await pref.setString('nama_user', namaUser ?? '');
+    await pref.setString('message', message ?? '');
+    await pref.setInt('user_id', id ?? 0);
+    await pref.setString('email', email ?? '');
+    await pref.setString('role', role ?? '');
   }
 
-  /// Ambil token dari SharedPreferences
-  static Future<String?> getToken() async {
-    final sp = await SharedPreferences.getInstance();
-    return sp.getString('token');
+  // Ambil data login dari SharedPreferences
+  Future<UserLogin> getUserLogin() async {
+    final pref = await SharedPreferences.getInstance();
+    bool isLogin = pref.getBool('is_login') ?? false;
+
+    if (isLogin) {
+      return UserLogin(
+        status: true,
+        namaUser: pref.getString('nama_user'),
+        id: pref.getInt('user_id'),
+        email: pref.getString('email'),
+        role: pref.getString('role'),
+      );
+    } else {
+      return UserLogin(status: false);
+    }
   }
 
-  /// Ambil nama user dari SharedPreferences
-  static Future<String?> getNamaUser() async {
-    final sp = await SharedPreferences.getInstance();
-    return sp.getString('nama_user');
-  }
-
-  /// Cek apakah sudah login
-  static Future<bool> isLoggedIn() async {
-    final sp = await SharedPreferences.getInstance();
-    return sp.getBool('isLoggedIn') ?? false;
-  }
-
-  /// Logout — hapus semua data
-  static Future<void> logout() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.clear();
+  // Hapus data login (logout)
+  Future<void> logout() async {
+    final pref = await SharedPreferences.getInstance();
+    await pref.remove('is_login');
+    await pref.remove('nama_user');
+    await pref.remove('message');
+    await pref.remove('user_id');
+    await pref.remove('email');
+    await pref.remove('role');
   }
 }

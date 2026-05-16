@@ -7,7 +7,7 @@ import 'package:joycharm/main.dart'; // JoyCharmColors
 const _baseUrl = 'http://192.168.1.8:3001';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
-class ProductModel {
+class OrderProductModel {
   final int? id;
   final String? name;
   final double? price;
@@ -15,8 +15,9 @@ class ProductModel {
   final int? stock;
   final double? rating;
   final int? sold;
+  final int? qty; // jumlah terakhir dibeli
 
-  const ProductModel({
+  const OrderProductModel({
     this.id,
     this.name,
     this.price,
@@ -24,79 +25,70 @@ class ProductModel {
     this.stock,
     this.rating,
     this.sold,
+    this.qty,
   });
 
-  factory ProductModel.fromJson(Map<String, dynamic> json) => ProductModel(
-        id: json['id'],
-        name: json['name'],
+  factory OrderProductModel.fromJson(Map<String, dynamic> json) =>
+      OrderProductModel(
+        id: json['id'] ?? json['product_id'],
+        name: json['name'] ?? json['product_name'],
         price: json['price'] != null
             ? double.tryParse(json['price'].toString())
             : null,
-        image: json['image'],
+        image: json['image'] ?? json['product_image'],
         stock: json['stock'],
         rating: json['rating'] != null
             ? double.tryParse(json['rating'].toString())
             : null,
         sold: json['sold'],
+        qty: json['qty'] ?? json['quantity'] ?? 1,
       );
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
-class FavoriteService {
-  Future<Map<String, dynamic>> getFavoriteProducts() async {
+class BuyAgainService {
+  Future<Map<String, dynamic>> getBuyAgainProducts() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/GetBarang'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 10));
-
-      print('BODY: ${response.body}');
+      final response = await http.get(Uri.parse('$_baseUrl/GetBarang'),
+          headers: {
+            'Content-Type': 'application/json'
+          }).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
 
-// karena API kamu langsung LIST
-        if (decoded is List) {
-          final list = decoded.map((e) => ProductModel.fromJson(e)).toList();
+// karena API kamu LIST langsung
+        final List rawList = decoded as List;
 
-          return {
-            'status': true,
-            'data': list,
-          };
-        }
+        final list = rawList.map((e) => OrderProductModel.fromJson(e)).toList();
 
-// fallback kalau bukan list
         return {
-          'status': false,
-          'message': 'Format data tidak sesuai',
-          'data': [],
+          'status': true,
+          'data': list,
         };
       }
-
       return {
         'status': false,
-        'message': 'Server error ${response.statusCode}',
-        'data': [],
+        'message': 'Server error ${response.statusCode}'
       };
     } catch (e) {
-      return {
-        'status': false,
-        'message': 'Koneksi gagal: $e',
-        'data': [],
-      };
+      return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
   }
 
-  Future<Map<String, dynamic>> removeFavorite(int productId) async {
+  Future<Map<String, dynamic>> addToCart(int productId, int qty) async {
     try {
       final response = await http
-          .delete(Uri.parse('$_baseUrl/GetBarang/$productId'), headers: {
-        'Content-Type': 'application/json'
-      }).timeout(const Duration(seconds: 10));
+          .post(
+            Uri.parse('$_baseUrl/GetBarang'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'product_id': productId, 'qty': qty}),
+          )
+          .timeout(const Duration(seconds: 10));
 
-      return response.statusCode == 200
+      return response.statusCode == 200 || response.statusCode == 201
           ? {'status': true}
-          : {'status': false, 'message': 'Gagal menghapus favorit'};
+          : {'status': false, 'message': 'Gagal menambahkan ke keranjang'};
     } catch (e) {
       return {'status': false, 'message': 'Koneksi gagal: $e'};
     }
@@ -104,18 +96,19 @@ class FavoriteService {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
-class FavoriteScreen extends StatefulWidget {
-  const FavoriteScreen({super.key});
+class BuyAgainScreen extends StatefulWidget {
+  const BuyAgainScreen({super.key});
 
   @override
-  State<FavoriteScreen> createState() => _FavoriteScreenState();
+  State<BuyAgainScreen> createState() => _BuyAgainScreenState();
 }
 
-class _FavoriteScreenState extends State<FavoriteScreen>
+class _BuyAgainScreenState extends State<BuyAgainScreen>
     with SingleTickerProviderStateMixin {
-  List<ProductModel> _products = [];
+  List<OrderProductModel> _products = [];
   bool _isLoading = true;
   String? _errorMessage;
+  final Set<int> _loadingCart = {}; // product id yang sedang diproses
   late final AnimationController _animCtrl;
 
   @override
@@ -125,7 +118,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _fetchFavorites();
+    _fetchProducts();
   }
 
   @override
@@ -134,43 +127,65 @@ class _FavoriteScreenState extends State<FavoriteScreen>
     super.dispose();
   }
 
-  Future<void> _fetchFavorites() async {
+  Future<void> _fetchProducts() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    final result = await FavoriteService().getFavoriteProducts();
+    final result = await BuyAgainService().getBuyAgainProducts();
     if (!mounted) return;
     setState(() {
       if (result['status'] == true) {
-        _products = List<ProductModel>.from(result['data']);
+        _products = List<OrderProductModel>.from(result['data']);
         _animCtrl.forward(from: 0);
       } else {
-        _errorMessage = result['message'] ?? 'Gagal memuat favorit';
+        _errorMessage = result['message'] ?? 'Gagal memuat data';
       }
       _isLoading = false;
     });
   }
 
-  Future<void> _removeFavorite(int productId) async {
-    final prev = List<ProductModel>.from(_products);
-    setState(() => _products.removeWhere((p) => p.id == productId));
+  Future<void> _addToCart(OrderProductModel product) async {
+    if (_loadingCart.contains(product.id)) return;
+    if (product.id == null) return;
+    setState(() => _loadingCart.add(product.id!));
 
-    final result = await FavoriteService().removeFavorite(productId);
+    final result =
+        await BuyAgainService().addToCart(product.id!, product.qty ?? 1);
+
     if (!mounted) return;
-    if (result['status'] != true) {
-      setState(() => _products = prev);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message'] ?? 'Gagal hapus favorit'),
-          backgroundColor: const Color(0xFFFF6FA8),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    setState(() => _loadingCart.remove(product.id));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              result['status'] == true
+                  ? Icons.check_circle_rounded
+                  : Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                result['status'] == true
+                    ? '${product.name ?? "Produk"} ditambahkan ke keranjang'
+                    : result['message'] ?? 'Gagal menambahkan ke keranjang',
+              ),
+            ),
+          ],
         ),
-      );
-    }
+        backgroundColor: result['status'] == true
+            ? JoyCharmColors.primary
+            : const Color(0xFFE53935),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -185,9 +200,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           if (_isLoading)
             const SliverFillRemaining(
               child: Center(
-                child: CircularProgressIndicator(
-                  color: JoyCharmColors.primary,
-                ),
+                child: CircularProgressIndicator(color: JoyCharmColors.primary),
               ),
             )
           else if (_errorMessage != null)
@@ -200,7 +213,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  childAspectRatio: 0.72,
+                  childAspectRatio: 0.70,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
                 ),
@@ -235,12 +248,12 @@ class _FavoriteScreenState extends State<FavoriteScreen>
     );
   }
 
-  // ── Header – wave + style sama dengan ProfileScreen ───────────────────────
+  // ── Header – wave + style sama dengan ProfileScreen & FavoriteScreen ──────
   Widget _buildHeader() {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Gradient wave – _WaveClipper sama persis dengan ProfileScreen
+        // Gradient wave
         ClipPath(
           clipper: _WaveClipper(),
           child: Container(
@@ -254,7 +267,6 @@ class _FavoriteScreenState extends State<FavoriteScreen>
             ),
             child: Stack(
               children: [
-                // Decorative circles – sama seperti ProfileScreen
                 Positioned(
                   right: -30,
                   top: -30,
@@ -284,7 +296,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           ),
         ),
 
-        // Top bar – icon button style sama dengan _iconButton di ProfileScreen
+        // Top bar
         Positioned(
           top: MediaQuery.of(context).padding.top + 12,
           left: 16,
@@ -298,7 +310,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
               const SizedBox(width: 12),
               const Expanded(
                 child: Text(
-                  'Favorit Saya',
+                  'Beli Lagi',
                   style: TextStyle(
                     fontFamily: 'Nunito',
                     fontSize: 20,
@@ -309,12 +321,12 @@ class _FavoriteScreenState extends State<FavoriteScreen>
               ),
               _iconBtn(Icons.search_rounded),
               const SizedBox(width: 8),
-              _iconBtn(Icons.tune_rounded),
+              _iconBtn(Icons.shopping_cart_outlined),
             ],
           ),
         ),
 
-        // Count chip melayang di atas wave
+        // Count chip
         Positioned(
           bottom: -14,
           left: 16,
@@ -325,7 +337,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFF6FA8).withOpacity(0.18),
+                  color: const Color(0xFF4DBFBF).withOpacity(0.18),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -334,15 +346,15 @@ class _FavoriteScreenState extends State<FavoriteScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.favorite_rounded,
-                    color: Color(0xFFFF6FA8), size: 14),
+                const Icon(Icons.refresh_rounded,
+                    color: JoyCharmColors.primary, size: 14),
                 const SizedBox(width: 6),
                 Text(
                   _isLoading
                       ? 'Memuat...'
                       : _products.isEmpty
-                          ? 'Belum ada produk'
-                          : '${_products.length} produk tersimpan',
+                          ? 'Belum ada riwayat pembelian'
+                          : '${_products.length} produk pernah dibeli',
                   style: const TextStyle(
                     fontFamily: 'Nunito',
                     fontSize: 12,
@@ -361,7 +373,6 @@ class _FavoriteScreenState extends State<FavoriteScreen>
     );
   }
 
-  // Sama persis dengan _iconButton di ProfileScreen
   Widget _iconBtn(IconData icon) => Container(
         width: 34,
         height: 34,
@@ -373,9 +384,9 @@ class _FavoriteScreenState extends State<FavoriteScreen>
       );
 
   // ── Product Card ──────────────────────────────────────────────────────────
-  Widget _buildProductCard(ProductModel product) {
-    final bool outOfStock = (product.stock ?? 0) == 0;
-    final bool isPopular = (product.sold ?? 0) > 10;
+  Widget _buildProductCard(OrderProductModel product) {
+    final bool outOfStock = (product.stock ?? 0) <= 0;
+    final bool isLoading = _loadingCart.contains(product.id);
 
     return GestureDetector(
       onTap: () {
@@ -396,7 +407,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Gambar
+            // ── Gambar ──────────────────────────────────────────────────
             Expanded(
               flex: 6,
               child: ClipRRect(
@@ -407,6 +418,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                   children: [
                     _productImage(product),
 
+                    // Overlay stok habis
                     if (outOfStock)
                       Container(color: Colors.black.withOpacity(0.38)),
                     if (outOfStock)
@@ -422,8 +434,8 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                         ),
                       ),
 
-                    // Badge laris
-                    if (isPopular && !outOfStock)
+                    // Badge qty terakhir dibeli
+                    if ((product.qty ?? 0) > 1)
                       Positioned(
                         top: 8,
                         left: 8,
@@ -434,9 +446,9 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                             color: const Color(0xFFFF6FA8),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text(
-                            'Laris',
-                            style: TextStyle(
+                          child: Text(
+                            '×${product.qty}',
+                            style: const TextStyle(
                               fontFamily: 'Nunito',
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
@@ -445,47 +457,21 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                           ),
                         ),
                       ),
-
-                    // Hapus favorit
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: () => _removeFavorite(product.id!),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.92),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.favorite_rounded,
-                            color: Color(0xFFFF6FA8),
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
             ),
 
-            // Info
+            // ── Info ────────────────────────────────────────────────────
             Expanded(
-              flex: 4,
+              flex: 5,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    // Nama
                     Text(
                       product.name ?? 'Produk',
                       maxLines: 2,
@@ -498,6 +484,8 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                         height: 1.3,
                       ),
                     ),
+
+                    // Harga
                     Text(
                       'Rp${_formatPrice(product.price ?? 0)}',
                       style: const TextStyle(
@@ -507,9 +495,11 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                         color: JoyCharmColors.primary,
                       ),
                     ),
-                    Row(
-                      children: [
-                        if (product.rating != null) ...[
+
+                    // Rating
+                    if (product.rating != null)
+                      Row(
+                        children: [
                           const Icon(Icons.star_rounded,
                               color: Color(0xFFFFD166), size: 11),
                           const SizedBox(width: 2),
@@ -524,32 +514,76 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '· ${product.sold ?? 0}',
+                            '· ${product.sold ?? 0} terjual',
                             style: const TextStyle(
                               fontSize: 9,
                               color: JoyCharmColors.textLight,
                             ),
                           ),
                         ],
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            // TODO: add to cart
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: JoyCharmColors.primary.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.add_shopping_cart_rounded,
-                              size: 13,
-                              color: JoyCharmColors.primary,
-                            ),
+                      ),
+
+                    // Tombol Beli Lagi
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: outOfStock || isLoading
+                            ? null
+                            : () => _addToCart(product),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            gradient: outOfStock
+                                ? null
+                                : const LinearGradient(
+                                    colors: [
+                                      Color(0xFF4DBFBF),
+                                      Color(0xFF38B2B2)
+                                    ],
+                                  ),
+                            color: outOfStock ? const Color(0xFFEEEEEE) : null,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(
+                            child: isLoading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        outOfStock
+                                            ? Icons.remove_shopping_cart_rounded
+                                            : Icons.add_shopping_cart_rounded,
+                                        size: 12,
+                                        color: outOfStock
+                                            ? JoyCharmColors.textLight
+                                            : Colors.white,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        outOfStock ? 'Stok Habis' : 'Beli Lagi',
+                                        style: TextStyle(
+                                          fontFamily: 'Nunito',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: outOfStock
+                                              ? JoyCharmColors.textLight
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -561,7 +595,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
     );
   }
 
-  Widget _productImage(ProductModel product) {
+  Widget _productImage(OrderProductModel product) {
     if (product.image != null && product.image!.isNotEmpty) {
       return Image.network(
         product.image!,
@@ -599,15 +633,16 @@ class _FavoriteScreenState extends State<FavoriteScreen>
             width: 110,
             height: 110,
             decoration: const BoxDecoration(
-              color: Color(0xFFFFF0F7),
+              color: Color(0xFFF0FBFB),
               shape: BoxShape.circle,
             ),
-            child:
-                const Center(child: Text('❤️', style: TextStyle(fontSize: 46))),
+            child: const Center(
+              child: Text('🛍️', style: TextStyle(fontSize: 46)),
+            ),
           ),
           const SizedBox(height: 20),
           const Text(
-            'Belum ada favorit',
+            'Belum ada riwayat pembelian',
             style: TextStyle(
               fontFamily: 'Nunito',
               fontSize: 18,
@@ -617,11 +652,12 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           ),
           const SizedBox(height: 8),
           const Text(
-            'Mulai sukai produk favoritmu',
+            'Yuk mulai belanja produk pilihanmu!',
             style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 13,
-                color: JoyCharmColors.textLight),
+              fontFamily: 'Nunito',
+              fontSize: 13,
+              color: JoyCharmColors.textLight,
+            ),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
@@ -634,9 +670,11 @@ class _FavoriteScreenState extends State<FavoriteScreen>
                   borderRadius: BorderRadius.circular(30)),
               elevation: 0,
             ),
-            child: const Text('Jelajahi Produk',
-                style: TextStyle(
-                    fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Mulai Belanja',
+              style:
+                  TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -683,7 +721,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: _fetchFavorites,
+            onPressed: _fetchProducts,
             icon: const Icon(Icons.refresh_rounded, size: 18),
             label:
                 const Text('Coba Lagi', style: TextStyle(fontFamily: 'Nunito')),
@@ -713,7 +751,7 @@ class _FavoriteScreenState extends State<FavoriteScreen>
   }
 }
 
-// ─── Wave Clipper – sama persis dengan yang ada di profile_screen.dart ────────
+// ─── Wave Clipper – sama persis dengan ProfileScreen & FavoriteScreen ─────────
 class _WaveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
