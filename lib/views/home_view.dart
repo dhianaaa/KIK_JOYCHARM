@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../main.dart';
 import '../widgets/navbar.dart';
-import 'profile_view.dart'; // ← import profile
+import 'profile_view.dart';
+import '../services/app_config.dart' as url;
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -18,7 +21,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final List<Widget> _screens = const [
     _HomeScreen(),
     _CatalogPlaceholder(),
-    ProfileScreen(), // ← pakai ProfileScreen (tanpa navbar, sudah ada di sini)
+    ProfileScreen(),
   ];
 
   void _onTabTapped(int index) {
@@ -62,6 +65,12 @@ class _HomeScreenState extends State<_HomeScreen>
 
   final String _userName = 'Joy';
 
+  // ── State produk dari API ─────────────────────────────────────────────────
+  List<_ProductData> _newProducts = [];
+  List<_ProductData> _recommendProducts = [];
+  bool _isLoadingProduk = true;
+  String? _errorProduk;
+
   final List<_BannerData> _banners = [
     _BannerData(
       title: 'Create Your\nOwn Joy',
@@ -92,18 +101,6 @@ class _HomeScreenState extends State<_HomeScreen>
     _ShortcutData(emoji: '🎥', label: 'Tutorial',      color: Color(0xFFFFF8E7), borderColor: Color(0xFFFFE0A0)),
   ];
 
-  final List<_ProductData> _newProducts = [
-    _ProductData(name: 'Gantungan Kunci Tassie Macrame Gantungan Tas Bag Charm Keychain Vl...', price: 'Rp 2.179', rating: '4.5', isPromo: false, emoji: '🔑', color: Color(0xFFFFF0F7)),
-    _ProductData(name: 'Mainan Edukasi Kreativitas Anak Beaded Set Kotak Meronca DIY Gelang Kelu...', price: 'Rp 33.500', rating: '4.7', isPromo: true, emoji: '📿', color: Color(0xFFEDFAFA)),
-    _ProductData(name: 'Gantungan Kunci Manik Manik Cute Han...', price: 'Rp 2.179', rating: '4.8', isPromo: false, emoji: '💎', color: Color(0xFFFFF8E7)),
-  ];
-
-  final List<_ProductData> _recommendProducts = [
-    _ProductData(name: 'Jepit Rambut Kancing Korea Cute Hair Clip Aesthetic Warna-Warni Handma...', price: 'Rp 1.299', rating: '4.9', isPromo: false, emoji: '🎀', color: Color(0xFFFFF0F7)),
-    _ProductData(name: 'DIY CD Painting Art Kit Kerajinan Lukis CD Aesthetic Handmade Craft Set Kreatifi...', price: 'Rp 18.700', rating: '4.7', isPromo: true, emoji: '🎨', color: Color(0xFFEDFAFA)),
-    _ProductData(name: 'Charm Bookmar Manik Manik Cute Han...', price: 'Rp 8.500', rating: '4.8', isPromo: false, emoji: '📚', color: Color(0xFFF0F8FF)),
-  ];
-
   final List<_TutorialData> _tutorials = [
     _TutorialData(
       title: 'How to make a Lip Holder Keychain / Bag Charm Parfum Holder Keychain by yofuldemoda',
@@ -121,11 +118,109 @@ class _HomeScreenState extends State<_HomeScreen>
     ),
   ];
 
+  // Warna background produk bergantian
+  final List<Color> _productColors = [
+    Color(0xFFFFF0F7),
+    Color(0xFFEDFAFA),
+    Color(0xFFFFF8E7),
+    Color(0xFFF0F8FF),
+    Color(0xFFF5F0FF),
+  ];
+
   @override
   void initState() {
     super.initState();
     _bannerController = PageController(viewportFraction: 1.0);
     Future.delayed(const Duration(seconds: 3), _autoScrollBanner);
+    _fetchBarang(); // ← ambil data produk dari API
+  }
+
+  // ── Fetch dari API ────────────────────────────────────────────────────────
+
+  Future<void> _fetchBarang() async {
+    try {
+      // Ganti dengan IP sesuai device:
+      // - Emulator Android : http://10.0.2.2:3001
+      // - Device fisik     : http://192.168.x.x:3001
+      // - iOS Simulator    : http://localhost:3001
+      final uri = Uri.parse('${url.BaseUrl}/Get Barang');
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final List decoded = json.decode(response.body);
+
+        final allProducts = decoded.asMap().entries.map((entry) {
+          final i = entry.key;
+          final item = entry.value;
+          return _ProductData(
+            name: item['name'] ?? '',
+            price: _formatRupiah(item['price']),
+            rating: (item['rating'] ?? 0).toString(),
+            imageUrl: item['image'] ?? '',
+            isPromo: false,
+            color: _productColors[i % _productColors.length],
+          );
+        }).toList();
+
+        if (mounted) {
+          setState(() {
+            // "New" = category == 'New', sisanya "Rekomendasi"
+            _newProducts = decoded.asMap().entries
+                .where((e) => e.value['category'] == 'New')
+                .map((e) => _ProductData(
+                      name: e.value['name'] ?? '',
+                      price: _formatRupiah(e.value['price']),
+                      rating: (e.value['rating'] ?? 0).toString(),
+                      imageUrl: e.value['image'] ?? '',
+                      isPromo: false,
+                      color: _productColors[e.key % _productColors.length],
+                    ))
+                .toList();
+
+            _recommendProducts = decoded.asMap().entries
+                .where((e) => e.value['category'] != 'New')
+                .map((e) => _ProductData(
+                      name: e.value['name'] ?? '',
+                      price: _formatRupiah(e.value['price']),
+                      rating: (e.value['rating'] ?? 0).toString(),
+                      imageUrl: e.value['image'] ?? '',
+                      isPromo: false,
+                      color: _productColors[e.key % _productColors.length],
+                    ))
+                .toList();
+
+            // Kalau semua category == 'New', tampilkan semua di rekomendasi juga
+            if (_recommendProducts.isEmpty) _recommendProducts = allProducts;
+
+            _isLoadingProduk = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _errorProduk = 'Gagal memuat produk (${response.statusCode})';
+            _isLoadingProduk = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorProduk = 'Tidak dapat terhubung ke server';
+          _isLoadingProduk = false;
+        });
+      }
+    }
+  }
+
+  String _formatRupiah(dynamic price) {
+    if (price == null) return 'Rp 0';
+    final number = int.tryParse(price.toString()) ?? 0;
+    final formatted = number.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]}.',
+    );
+    return 'Rp $formatted';
   }
 
   void _autoScrollBanner() {
@@ -157,9 +252,9 @@ class _HomeScreenState extends State<_HomeScreen>
         SliverToBoxAdapter(child: _buildBannerCarousel()),
         SliverToBoxAdapter(child: _buildShortcuts()),
         SliverToBoxAdapter(child: _buildSectionHeader('New', 'Lihat Semua', color: JoyCharmColors.primary)),
-        SliverToBoxAdapter(child: _buildProductRow(_newProducts)),
+        SliverToBoxAdapter(child: _buildProductSection(_newProducts)),
         SliverToBoxAdapter(child: _buildSectionHeader('Rekomendasi', 'Lihat Semua', color: JoyCharmColors.primary)),
-        SliverToBoxAdapter(child: _buildProductRow(_recommendProducts)),
+        SliverToBoxAdapter(child: _buildProductSection(_recommendProducts)),
         SliverToBoxAdapter(child: _buildSectionHeader('Tutorial DIY', 'Semua', color: JoyCharmColors.primary)),
         SliverToBoxAdapter(child: _buildTutorialGrid()),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -178,7 +273,6 @@ class _HomeScreenState extends State<_HomeScreen>
       color: const Color(0xFF4DBFBF),
       child: Row(
         children: [
-          // Avatar
           Container(
             width: 42, height: 42,
             decoration: BoxDecoration(
@@ -186,9 +280,7 @@ class _HomeScreenState extends State<_HomeScreen>
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
             ),
-            child: const Center(
-              child: Text('😊', style: TextStyle(fontSize: 20)),
-            ),
+            child: const Center(child: Text('😊', style: TextStyle(fontSize: 20))),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -202,15 +294,11 @@ class _HomeScreenState extends State<_HomeScreen>
                       fontWeight: FontWeight.w900, color: Colors.white,
                     ),
                   ),
-                  const TextSpan(
-                    text: '✨',
-                    style: TextStyle(fontSize: 14),
-                  ),
+                  const TextSpan(text: '✨', style: TextStyle(fontSize: 14)),
                 ],
               ),
             ),
           ),
-          // Notif
           GestureDetector(
             onTap: () {},
             child: Container(
@@ -219,13 +307,10 @@ class _HomeScreenState extends State<_HomeScreen>
                 color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Center(
-                child: Text('🎟️', style: TextStyle(fontSize: 18)),
-              ),
+              child: const Center(child: Text('🎟️', style: TextStyle(fontSize: 18))),
             ),
           ),
           const SizedBox(width: 8),
-          // Cart
           GestureDetector(
             onTap: () {},
             child: Container(
@@ -277,7 +362,6 @@ class _HomeScreenState extends State<_HomeScreen>
                   ),
                   child: Stack(
                     children: [
-                      // Decorative circles
                       Positioned(
                         right: -20, top: -20,
                         child: Container(
@@ -362,7 +446,6 @@ class _HomeScreenState extends State<_HomeScreen>
               },
             ),
           ),
-          // Dots
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(_banners.length, (index) {
@@ -386,7 +469,7 @@ class _HomeScreenState extends State<_HomeScreen>
     );
   }
 
-  // ── Shortcuts (Catalog, Craft Journey, Tutorial) ──────────────────────────
+  // ── Shortcuts ─────────────────────────────────────────────────────────────
 
   Widget _buildShortcuts() {
     return Container(
@@ -411,9 +494,7 @@ class _HomeScreenState extends State<_HomeScreen>
                     shape: BoxShape.circle,
                     border: Border.all(color: s.borderColor, width: 1.5),
                   ),
-                  child: Center(
-                    child: Text(s.emoji, style: const TextStyle(fontSize: 28)),
-                  ),
+                  child: Center(child: Text(s.emoji, style: const TextStyle(fontSize: 28))),
                 ),
                 const SizedBox(height: 8),
                 Text(s.label,
@@ -457,7 +538,77 @@ class _HomeScreenState extends State<_HomeScreen>
     );
   }
 
-  // ── Product Row (horizontal scroll) ──────────────────────────────────────
+  // ── Product Section (loading / error / data) ──────────────────────────────
+
+  Widget _buildProductSection(List<_ProductData> products) {
+    if (_isLoadingProduk) {
+      return const SizedBox(
+        height: 220,
+        child: Center(
+          child: CircularProgressIndicator(color: JoyCharmColors.primary),
+        ),
+      );
+    }
+
+    if (_errorProduk != null) {
+      return SizedBox(
+        height: 220,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('😢', style: TextStyle(fontSize: 32)),
+              const SizedBox(height: 8),
+              Text(_errorProduk!,
+                style: const TextStyle(
+                  fontFamily: 'Nunito', fontSize: 13,
+                  color: JoyCharmColors.textMedium,
+                )),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isLoadingProduk = true;
+                    _errorProduk = null;
+                  });
+                  _fetchBarang();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: JoyCharmColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Coba Lagi',
+                    style: TextStyle(
+                      fontFamily: 'Nunito', fontSize: 12,
+                      fontWeight: FontWeight.w700, color: Colors.white,
+                    )),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (products.isEmpty) {
+      return const SizedBox(
+        height: 220,
+        child: Center(
+          child: Text('Belum ada produk 🛍️',
+            style: TextStyle(
+              fontFamily: 'Nunito', fontSize: 13,
+              color: JoyCharmColors.textMedium,
+            )),
+        ),
+      );
+    }
+
+    return _buildProductRow(products);
+  }
+
+  // ── Product Row ───────────────────────────────────────────────────────────
 
   Widget _buildProductRow(List<_ProductData> products) {
     return SizedBox(
@@ -487,7 +638,7 @@ class _HomeScreenState extends State<_HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Image
+                  // Gambar dari URL atau fallback warna
                   Container(
                     height: 120,
                     decoration: BoxDecoration(
@@ -496,7 +647,30 @@ class _HomeScreenState extends State<_HomeScreen>
                     ),
                     child: Stack(
                       children: [
-                        Center(child: Text(p.emoji, style: const TextStyle(fontSize: 44))),
+                        // Tampilkan gambar dari URL
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                          child: p.imageUrl.isNotEmpty
+                              ? Image.network(
+                                  p.imageUrl,
+                                  width: double.infinity,
+                                  height: 120,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Center(
+                                    child: Text('🛍️', style: TextStyle(fontSize: 44)),
+                                  ),
+                                  loadingBuilder: (_, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return const Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: JoyCharmColors.primary,
+                                      ),
+                                    );
+                                  },
+                                )
+                              : const Center(child: Text('🛍️', style: TextStyle(fontSize: 44))),
+                        ),
                         if (p.isPromo)
                           Positioned(
                             top: 8, left: 8,
@@ -607,16 +781,13 @@ class _HomeScreenState extends State<_HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Thumbnail
                   Container(
                     height: 100,
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
                     ),
-                    child: Center(
-                      child: Text(t.emoji, style: const TextStyle(fontSize: 40)),
-                    ),
+                    child: Center(child: Text(t.emoji, style: const TextStyle(fontSize: 40))),
                   ),
                   Expanded(
                     child: Padding(
@@ -682,12 +853,12 @@ class _ShortcutData {
 }
 
 class _ProductData {
-  final String name, price, rating, emoji;
+  final String name, price, rating, imageUrl; // ← imageUrl ganti emoji
   final bool isPromo;
   final Color color;
   const _ProductData({
     required this.name, required this.price,
-    required this.rating, required this.emoji,
+    required this.rating, required this.imageUrl,
     required this.isPromo, required this.color,
   });
 }
